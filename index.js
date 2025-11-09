@@ -1,316 +1,363 @@
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+        class ScientificCalculator {
+            constructor() {
+                this.currentInput = '0';
+                this.previousInput = '';
+                this.operator = null;
+                this.waitingForNewInput = false;
+                this.memory = 0;
+                this.history = this.loadHistory();
+                this.currentMode = 'basic';
+                this.init();
+            }
 
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 40px 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+            init() {
+                this.createButtons();
+                this.renderHistory();
+                this.setupEventListeners();
+                this.updateDisplay();
+            }
 
-        .calculator-container {
-            display: grid;
-            grid-template-columns: 1fr 400px;
-            gap: 30px;
-            max-width: 1000px;
-            width: 100%;
-            background: white;
-            border-radius: 25px;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.2);
-            overflow: hidden;
-        }
+            createButtons() {
+                const buttonsGrid = document.getElementById('buttonsGrid');
+                
+                const buttonLayout = {
+                    basic: [
+                        ['C', '±', '%', '÷', '√'],
+                        ['7', '8', '9', '×', 'x²'],
+                        ['4', '5', '6', '-', '1/x'],
+                        ['1', '2', '3', '+', '='],
+                        ['0', '', '.', '=', '']
+                    ],
+                    scientific: [
+                        ['C', '±', '%', '÷', '√', 'x^y'],
+                        ['7', '8', '9', '×', 'x²', 'sin'],
+                        ['4', '5', '6', '-', '1/x', 'cos'],
+                        ['1', '2', '3', '+', 'log', 'tan'],
+                        ['0', '', '.', '=', 'ln', 'π'],
+                        ['(', ')', '!', 'e', 'rad', 'deg']
+                    ],
+                    programmer: [
+                        ['C', '±', '%', '÷', 'HEX', 'BIN'],
+                        ['7', '8', '9', '×', 'DEC', 'OCT'],
+                        ['4', '5', '6', '-', 'AND', 'OR'],
+                        ['1', '2', '3', '+', 'XOR', 'NOT'],
+                        ['0', '', '.', '=', '<<', '>>']
+                    ]
+                };
 
-        @media (max-width: 900px) {
-            .calculator-container {
-                grid-template-columns: 1fr;
+                const buttons = buttonLayout[this.currentMode];
+                buttonsGrid.innerHTML = '';
+
+                buttons.forEach(row => {
+                    row.forEach(buttonText => {
+                        if (!buttonText) {
+                            buttonsGrid.appendChild(document.createElement('div'));
+                            return;
+                        }
+
+                        const button = document.createElement('button');
+                        button.className = this.getButtonClass(buttonText);
+                        button.textContent = buttonText;
+                        button.dataset.action = this.getButtonAction(buttonText);
+                        
+                        if (buttonText === '=') {
+                            button.classList.add('equals-btn');
+                        }
+
+                        button.addEventListener('click', () => this.handleButtonClick(buttonText));
+                        buttonsGrid.appendChild(button);
+                    });
+                });
+            }
+
+            getButtonClass(text) {
+                if (['÷', '×', '-', '+', '='].includes(text)) return 'calc-btn operator-btn';
+                if (['C', '±', '%'].includes(text)) return 'calc-btn function-btn';
+                if (['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.'].includes(text)) return 'calc-btn number-btn';
+                return 'calc-btn scientific-btn';
+            }
+
+            getButtonAction(text) {
+                const actions = {
+                    'C': 'clear', '±': 'plus-minus', '%': 'percentage', 
+                    '=': 'equals', '.': 'decimal'
+                };
+                return actions[text] || text.toLowerCase();
+            }
+
+            setupEventListeners() {
+                // Mode toggle
+                document.querySelectorAll('.mode-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                        e.target.classList.add('active');
+                        this.currentMode = e.target.dataset.mode;
+                        this.createButtons();
+                    });
+                });
+
+                // Memory buttons
+                document.querySelectorAll('.memory-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        this.handleMemoryAction(e.target.dataset.action);
+                    });
+                });
+
+                // Clear history
+                document.getElementById('clearHistory').addEventListener('click', () => {
+                    this.history = [];
+                    this.saveHistory();
+                    this.renderHistory();
+                });
+
+                // Keyboard support
+                document.addEventListener('keydown', (e) => {
+                    this.handleKeyboardInput(e);
+                });
+            }
+
+            handleButtonClick(buttonText) {
+                this.clearError();
+
+                if (['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(buttonText)) {
+                    this.inputNumber(buttonText);
+                } else if (buttonText === '.') {
+                    this.inputDecimal();
+                } else if (['÷', '×', '-', '+'].includes(buttonText)) {
+                    this.inputOperator(buttonText);
+                } else if (buttonText === '=') {
+                    this.calculate();
+                } else if (buttonText === 'C') {
+                    this.clear();
+                } else if (buttonText === '±') {
+                    this.plusMinus();
+                } else if (buttonText === '%') {
+                    this.percentage();
+                } else {
+                    this.handleScientificFunction(buttonText);
+                }
+
+                this.updateDisplay();
+            }
+
+            inputNumber(num) {
+                if (this.waitingForNewInput) {
+                    this.currentInput = num;
+                    this.waitingForNewInput = false;
+                } else {
+                    this.currentInput = this.currentInput === '0' ? num : this.currentInput + num;
+                }
+            }
+
+            inputDecimal() {
+                if (this.waitingForNewInput) {
+                    this.currentInput = '0.';
+                    this.waitingForNewInput = false;
+                } else if (this.currentInput.indexOf('.') === -1) {
+                    this.currentInput += '.';
+                }
+            }
+
+            inputOperator(nextOperator) {
+                const inputValue = parseFloat(this.currentInput);
+
+                if (this.previousInput === '') {
+                    this.previousInput = this.currentInput;
+                } else if (this.operator) {
+                    const result = this.performCalculation();
+                    this.currentInput = String(result);
+                    this.previousInput = String(result);
+                }
+
+                this.waitingForNewInput = true;
+                this.operator = nextOperator;
+            }
+
+            calculate() {
+                if (this.operator && !this.waitingForNewInput) {
+                    const result = this.performCalculation();
+                    this.addToHistory(`${this.previousInput} ${this.operator} ${this.currentInput} = ${result}`);
+                    
+                    this.currentInput = String(result);
+                    this.previousInput = '';
+                    this.operator = null;
+                    this.waitingForNewInput = true;
+
+                    this.highlightResult();
+                }
+            }
+
+            performCalculation() {
+                const prev = parseFloat(this.previousInput);
+                const current = parseFloat(this.currentInput);
+                
+                if (isNaN(prev) || isNaN(current)) return 0;
+
+                switch (this.operator) {
+                    case '+': return prev + current;
+                    case '-': return prev - current;
+                    case '×': return prev * current;
+                    case '÷': return current !== 0 ? prev / current : this.showError('Division by zero');
+                    default: return current;
+                }
+            }
+
+            handleScientificFunction(func) {
+                const value = parseFloat(this.currentInput);
+                if (isNaN(value)) return;
+
+                let result;
+                switch (func) {
+                    case '√': result = Math.sqrt(value); break;
+                    case 'x²': result = Math.pow(value, 2); break;
+                    case '1/x': result = value !== 0 ? 1 / value : this.showError('Division by zero'); break;
+                    case 'sin': result = Math.sin(this.toRadians(value)); break;
+                    case 'cos': result = Math.cos(this.toRadians(value)); break;
+                    case 'tan': result = Math.tan(this.toRadians(value)); break;
+                    case 'log': result = Math.log10(value); break;
+                    case 'ln': result = Math.log(value); break;
+                    case 'π': result = Math.PI; break;
+                    case 'e': result = Math.E; break;
+                    case '!': result = this.factorial(value); break;
+                    case 'x^y': 
+                        this.previousInput = this.currentInput;
+                        this.operator = '^';
+                        this.waitingForNewInput = true;
+                        return;
+                    default: return;
+                }
+
+                if (result !== undefined && !isNaN(result)) {
+                    this.addToHistory(`${func}(${value}) = ${result}`);
+                    this.currentInput = String(result);
+                    this.waitingForNewInput = true;
+                    this.highlightResult();
+                }
+            }
+
+            factorial(n) {
+                if (n < 0) return this.showError('Factorial of negative number');
+                if (n % 1 !== 0) return this.showError('Factorial of non-integer');
+                return n <= 1 ? 1 : n * this.factorial(n - 1);
+            }
+
+            toRadians(degrees) {
+                return this.currentMode === 'scientific' ? degrees * Math.PI / 180 : degrees;
+            }
+
+            clear() {
+                this.currentInput = '0';
+                this.previousInput = '';
+                this.operator = null;
+                this.waitingForNewInput = false;
+            }
+
+            plusMinus() {
+                this.currentInput = String(-parseFloat(this.currentInput));
+            }
+
+            percentage() {
+                this.currentInput = String(parseFloat(this.currentInput) / 100);
+            }
+
+            handleMemoryAction(action) {
+                const value = parseFloat(this.currentInput);
+                
+                switch (action) {
+                    case 'memory-clear': this.memory = 0; break;
+                    case 'memory-recall': this.currentInput = String(this.memory); break;
+                    case 'memory-add': this.memory += value; break;
+                    case 'memory-subtract': this.memory -= value; break;
+                }
+                
+                this.updateMemoryDisplay();
+            }
+
+            updateMemoryDisplay() {
+                const display = document.getElementById('memoryDisplay');
+                display.textContent = this.memory === 0 ? 'Memory: Empty' : `Memory: ${this.memory}`;
+            }
+
+            highlightResult() {
+                const display = document.getElementById('currentOperation');
+                display.classList.add('highlight');
+                setTimeout(() => display.classList.remove('highlight'), 1000);
+            }
+
+            showError(message) {
+                document.getElementById('errorMessage').textContent = message;
+                return 0;
+            }
+
+            clearError() {
+                document.getElementById('errorMessage').textContent = '';
+            }
+
+            updateDisplay() {
+                document.getElementById('currentOperation').textContent = this.currentInput;
+                document.getElementById('previousOperation').textContent = 
+                    this.previousInput + (this.operator ? ' ' + this.operator : '');
+            }
+
+            addToHistory(entry) {
+                this.history.unshift({
+                    expression: entry.split('=')[0].trim(),
+                    result: entry.split('=')[1].trim(),
+                    timestamp: new Date().toLocaleString()
+                });
+                
+                if (this.history.length > 20) this.history.pop();
+                this.saveHistory();
+                this.renderHistory();
+            }
+
+            renderHistory() {
+                const historyList = document.getElementById('historyList');
+                
+                if (this.history.length === 0) {
+                    historyList.innerHTML = '<div class="empty-history">No calculations yet</div>';
+                    return;
+                }
+
+                historyList.innerHTML = this.history.map(item => `
+                    <div class="history-item" onclick="calculator.useHistory('${item.result}')">
+                        <div class="history-expression">${item.expression}</div>
+                        <div class="history-result">= ${item.result}</div>
+                        <div style="font-size: 0.8em; color: #bdc3c7; margin-top: 5px;">${item.timestamp}</div>
+                    </div>
+                `).join('');
+            }
+
+            useHistory(result) {
+                this.currentInput = result;
+                this.waitingForNewInput = true;
+                this.updateDisplay();
+            }
+
+            loadHistory() {
+                return JSON.parse(localStorage.getItem('calculator-history')) || [];
+            }
+
+            saveHistory() {
+                localStorage.setItem('calculator-history', JSON.stringify(this.history));
+            }
+
+            handleKeyboardInput(e) {
+                e.preventDefault();
+                const key = e.key;
+
+                if ('0123456789'.includes(key)) this.inputNumber(key);
+                else if (key === '.') this.inputDecimal();
+                else if (key === 'Enter' || key === '=') this.calculate();
+                else if (key === 'Escape' || key === 'Delete') this.clear();
+                else if ('+-*/'.includes(key)) this.inputOperator(key === '*' ? '×' : key === '/' ? '÷' : key);
+                
+                this.updateDisplay();
             }
         }
 
-        /* Calculator Main Section */
-        .calculator-main {
-            padding: 40px;
-        }
-
-        .calculator-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        h1 {
-            font-size: 2.5em;
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }
-
-        .subtitle {
-            color: #7f8c8d;
-            font-size: 1.1em;
-        }
-
-        /* Display */
-        .display-container {
-            background: #2c3e50;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 25px;
-            color: white;
-            min-height: 120px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
-
-        .previous-operation {
-            font-size: 1.1em;
-            opacity: 0.7;
-            min-height: 1.5em;
-            word-break: break-all;
-        }
-
-        .current-operation {
-            font-size: 2.2em;
-            font-weight: 300;
-            word-break: break-all;
-            text-align: right;
-        }
-
-        .error-message {
-            color: #e74c3c;
-            font-size: 1.1em;
-        }
-
-        /* Buttons Grid */
-        .buttons-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-            margin-bottom: 25px;
-        }
-
-        @media (max-width: 600px) {
-            .buttons-grid {
-                grid-template-columns: repeat(4, 1fr);
-            }
-            
-            .scientific-btn {
-                display: none;
-            }
-        }
-
-        .calc-btn {
-            background: #f8f9fa;
-            border: none;
-            padding: 20px 10px;
-            border-radius: 12px;
-            font-size: 1.2em;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .calc-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        }
-
-        .calc-btn:active {
-            transform: translateY(0);
-        }
-
-        .calc-btn::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            background: rgba(255,255,255,0.2);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            transition: width 0.3s, height 0.3s;
-        }
-
-        .calc-btn:active::after {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Button Types */
-        .number-btn {
-            background: white;
-            color: #2c3e50;
-            border: 2px solid #e9ecef;
-        }
-
-        .operator-btn {
-            background: #3498db;
-            color: white;
-        }
-
-        .function-btn {
-            background: #9b59b6;
-            color: white;
-        }
-
-        .scientific-btn {
-            background: #2c3e50;
-            color: white;
-            font-size: 1em;
-        }
-
-        .equals-btn {
-            background: #27ae60;
-            color: white;
-            grid-column: span 2;
-        }
-
-        .clear-btn {
-            background: #e74c3c;
-            color: white;
-        }
-
-        .memory-btn {
-            background: #f39c12;
-            color: white;
-        }
-
-        /* Mode Toggle */
-        .mode-toggle {
-            display: flex;
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 5px;
-            margin-bottom: 20px;
-        }
-
-        .mode-btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-
-        .mode-btn.active {
-            background: white;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        /* History Panel */
-        .history-panel {
-            background: #f8f9fa;
-            padding: 40px 30px;
-            border-left: 1px solid #e9ecef;
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-        }
-
-        @media (max-width: 900px) {
-            .history-panel {
-                border-left: none;
-                border-top: 1px solid #e9ecef;
-            }
-        }
-
-        .history-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 25px;
-        }
-
-        .history-title {
-            font-size: 1.4em;
-            color: #2c3e50;
-        }
-
-        .clear-history {
-            background: #95a5a6;
-            color: white;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9em;
-        }
-
-        .history-list {
-            flex: 1;
-            overflow-y: auto;
-            max-height: 400px;
-        }
-
-        .history-item {
-            background: white;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 10px;
-            border-left: 4px solid #3498db;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .history-item:hover {
-            transform: translateX(5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        .history-expression {
-            font-size: 0.9em;
-            color: #7f8c8d;
-            margin-bottom: 5px;
-        }
-
-        .history-result {
-            font-size: 1.2em;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-
-        .empty-history {
-            text-align: center;
-            color: #bdc3c7;
-            padding: 40px 20px;
-        }
-
-        /* Memory Functions */
-        .memory-functions {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .memory-display {
-            grid-column: span 2;
-            background: #34495e;
-            color: white;
-            padding: 10px;
-            border-radius: 6px;
-            text-align: center;
-            font-size: 0.9em;
-        }
-
-        /* Animation for new calculations */
-        @keyframes highlight {
-            0% { background-color: rgba(39, 174, 96, 0.3); }
-            100% { background-color: transparent; }
-        }
-
-        .highlight {
-            animation: highlight 1s ease;
-        }
+        // Initialize calculator
+        const calculator = new ScientificCalculator();
+        window.calculator = calculator;
     
